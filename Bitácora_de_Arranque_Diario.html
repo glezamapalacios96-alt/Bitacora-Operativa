@@ -1,0 +1,1259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bitácora de Arranque Diario - Dashboard Operativo</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f1f5f9;
+      color: #0f172a;
+    }
+
+    /* Personalización de scrollbar sutil */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    /* Eliminar flechas en inputs numéricos para estética limpia */
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type=number] {
+      -moz-appearance: textfield;
+    }
+
+    /* Estilos específicos para Impresión / Exportar a PDF */
+    @media print {
+      @page {
+        size: letter landscape;
+        margin: 8mm;
+      }
+      body {
+        background-color: #ffffff !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        font-size: 10px !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .print-container {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+      }
+      .card-shadow {
+        box-shadow: none !important;
+        border: 1px solid #cbd5e1 !important;
+        break-inside: avoid;
+      }
+      input, textarea, select {
+        border: none !important;
+        background: transparent !important;
+        padding: 1px 2px !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen antialiased pb-12">
+
+  <!-- Notificación Toast Flotante -->
+  <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none no-print">
+    <div class="bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 border border-slate-700">
+      <i data-lucide="check-circle-2" class="w-5 h-5 text-emerald-400"></i>
+      <span id="toast-message" class="text-sm font-medium">Guardado automáticamente</span>
+    </div>
+  </div>
+
+  <!-- Modal de Confirmación Personalizado (Sin usar alert/confirm nativos) -->
+  <div id="confirm-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden items-center justify-center p-4 no-print">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+      <div class="flex items-center gap-3 text-amber-600 mb-3">
+        <div class="p-2 bg-amber-100 rounded-lg">
+          <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+        </div>
+        <h3 id="modal-title" class="text-lg font-bold text-slate-900">¿Iniciar nuevo día / limpiar?</h3>
+      </div>
+      <p id="modal-desc" class="text-sm text-slate-600 mb-6 leading-relaxed">
+        Se restablecerán todos los campos de la fecha seleccionada a los valores vacíos iniciales. Esta acción sobrescribirá los datos actuales de esta fecha.
+      </p>
+      <div class="flex justify-end gap-3">
+        <button id="modal-cancel" class="px-4 py-2 rounded-lg text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">
+          Cancelar
+        </button>
+        <button id="modal-confirm" class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 transition shadow-sm">
+          Sí, limpiar plantilla
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenedor Principal -->
+  <div class="max-w-[1440px] mx-auto px-3 sm:px-6 pt-4 sm:pt-6 print-container">
+
+    <!-- ==================== 1. ENCABEZADO CORPORATIVO ==================== -->
+    <header class="bg-slate-900 text-white rounded-2xl shadow-lg border border-slate-800 overflow-hidden mb-6 card-shadow">
+      <!-- Barra superior de acciones -->
+      <div class="bg-slate-950/60 px-4 sm:px-6 py-2.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 no-print">
+        <div class="flex items-center gap-2 text-xs text-slate-400">
+          <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="save-status">Sincronizado localmente</span>
+          <span class="hidden sm:inline text-slate-600">|</span>
+          <span id="saved-dates-badge" class="hidden sm:inline text-slate-400">0 registros guardados</span>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button onclick="saveCurrentData(true)" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer">
+            <i data-lucide="save" class="w-3.5 h-3.5"></i>
+            Guardar
+          </button>
+          <button onclick="promptResetDay()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-rose-600/90 text-slate-200 hover:text-white border border-slate-700 transition cursor-pointer">
+            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+            Limpiar / Nuevo Día
+          </button>
+          <div class="relative inline-block">
+            <button onclick="exportCSV()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer">
+              <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-emerald-400"></i>
+              CSV
+            </button>
+          </div>
+          <button onclick="exportJSON()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer">
+            <i data-lucide="download" class="w-3.5 h-3.5 text-sky-400"></i>
+            JSON
+          </button>
+          <button onclick="window.print()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition shadow-xs cursor-pointer">
+            <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+            Imprimir / PDF
+          </button>
+        </div>
+      </div>
+
+      <!-- Título y metadatos principales -->
+      <div class="p-4 sm:p-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+        <div class="flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center shrink-0">
+            <i data-lucide="clipboard-check" class="w-7 h-7 text-blue-400"></i>
+          </div>
+          <div>
+            <span class="text-[11px] font-bold uppercase tracking-widest text-blue-400 block">Control Operativo Industrial</span>
+            <h1 class="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-white">
+              BITÁCORA DE ARRANQUE DIARIO
+            </h1>
+          </div>
+        </div>
+
+        <!-- Campos: Fecha, Hora, Coordina -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-800/80 p-3 rounded-xl border border-slate-700/80">
+          <!-- Fecha -->
+          <div class="flex flex-col">
+            <label for="header-date" class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1">
+              <i data-lucide="calendar" class="w-3 h-3 text-blue-400"></i> Fecha:
+            </label>
+            <input type="date" id="header-date" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-white focus:outline-none focus:border-blue-500 transition" />
+          </div>
+
+          <!-- Hora -->
+          <div class="flex flex-col">
+            <label for="header-time" class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1">
+              <i data-lucide="clock" class="w-3 h-3 text-blue-400"></i> Hora:
+            </label>
+            <input type="time" id="header-time" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-white focus:outline-none focus:border-blue-500 transition" />
+          </div>
+
+          <!-- Coordina -->
+          <div class="flex flex-col">
+            <label for="header-coordina" class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1">
+              <i data-lucide="user-check" class="w-3 h-3 text-blue-400"></i> Coordina:
+            </label>
+            <input type="text" id="header-coordina" placeholder="Nombre del responsable..." class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition" />
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ==================== 2. SECCIÓN PRODUCCIÓN (AYER / HOY) ==================== -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6 card-shadow">
+      <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <i data-lucide="factory" class="w-5 h-5 text-blue-400"></i>
+          <h2 class="text-base font-bold tracking-wide uppercase">PRODUCCIÓN</h2>
+        </div>
+        <div class="flex items-center gap-4 text-xs text-slate-300">
+          <span>Promedio Ayer: <strong id="avg-prod-ayer" class="text-white">0%</strong></span>
+          <span>Promedio Hoy: <strong id="avg-prod-hoy" class="text-emerald-400">0%</strong></span>
+        </div>
+      </div>
+
+      <div class="p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Columna AYER -->
+        <div class="border border-slate-200 rounded-xl overflow-hidden flex flex-col bg-slate-50/40">
+          <div class="bg-slate-100 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
+            <span class="font-extrabold text-sm text-slate-800 tracking-wider uppercase flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-slate-500"></span> AYER
+            </span>
+            <button onclick="addProdRow('ayer')" class="no-print inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition cursor-pointer">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Fila
+            </button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-600">
+                  <th class="py-2 px-3 w-10 text-center">#</th>
+                  <th class="py-2 px-3">ORDEN DE VENTA</th>
+                  <th class="py-2 px-3 w-44 sm:w-52">AVANCE (%)</th>
+                  <th class="py-2 px-2 w-8 no-print"></th>
+                </tr>
+              </thead>
+              <tbody id="prod-ayer-body" class="divide-y divide-slate-200/80 text-sm bg-white">
+                <!-- Filas dinámicas JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Columna HOY -->
+        <div class="border border-slate-200 rounded-xl overflow-hidden flex flex-col bg-slate-50/40">
+          <div class="bg-blue-950 text-white border-b border-blue-900 px-4 py-2.5 flex items-center justify-between">
+            <span class="font-extrabold text-sm tracking-wider uppercase flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span> HOY
+            </span>
+            <button onclick="addProdRow('hoy')" class="no-print inline-flex items-center gap-1 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-700 px-2.5 py-1 rounded-lg transition cursor-pointer">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Fila
+            </button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-600">
+                  <th class="py-2 px-3 w-10 text-center">#</th>
+                  <th class="py-2 px-3">ORDEN DE VENTA</th>
+                  <th class="py-2 px-3 w-44 sm:w-52">AVANCE (%)</th>
+                  <th class="py-2 px-2 w-8 no-print"></th>
+                </tr>
+              </thead>
+              <tbody id="prod-hoy-body" class="divide-y divide-slate-200/80 text-sm bg-white">
+                <!-- Filas dinámicas JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 3. SECCIÓN LOGÍSTICA ==================== -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6 card-shadow">
+      <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <i data-lucide="truck" class="w-5 h-5 text-amber-400"></i>
+          <h2 class="text-base font-bold tracking-wide uppercase">LOGÍSTICA</h2>
+        </div>
+        <span class="text-xs text-slate-300 hidden sm:inline">Control de entregas, rutas e instalaciones</span>
+      </div>
+
+      <div class="p-4 sm:p-5 space-y-5">
+        <!-- Bloque A: Entregadas ayer | Órdenes de venta  Y  A entregar hoy | Órdenes de venta -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Entregadas ayer -->
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white">
+            <div class="bg-slate-100 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
+              <h3 class="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wide">
+                Entregadas ayer <span class="text-slate-400 font-normal mx-1">|</span> <span class="text-blue-700">Órdenes de venta</span>
+              </h3>
+              <button onclick="addLogisticItem('entregadasAyer')" class="no-print inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition cursor-pointer">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Agregar OV
+              </button>
+            </div>
+            <div id="list-entregadasAyer" class="p-3 space-y-2 min-h-[120px]">
+              <!-- Items dinámicos -->
+            </div>
+          </div>
+
+          <!-- A entregar hoy -->
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white">
+            <div class="bg-slate-100 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
+              <h3 class="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wide">
+                A entregar hoy <span class="text-slate-400 font-normal mx-1">|</span> <span class="text-emerald-700">Órdenes de venta</span>
+              </h3>
+              <button onclick="addLogisticItem('entregarHoy')" class="no-print inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg transition cursor-pointer">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Agregar OV
+              </button>
+            </div>
+            <div id="list-entregarHoy" class="p-3 space-y-2 min-h-[120px]">
+              <!-- Items dinámicos -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Bloque B: Vueltas, recolecciones y embarques  Y  Instalaciones -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Vueltas, recolecciones y embarques -->
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white">
+            <div class="bg-slate-100 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
+              <h3 class="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                <i data-lucide="route" class="w-4 h-4 text-slate-600"></i>
+                Vueltas, recolecciones y embarques
+              </h3>
+              <button onclick="addLogisticItem('vueltas')" class="no-print inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-200/70 hover:bg-slate-200 px-2.5 py-1 rounded-lg transition cursor-pointer">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Agregar
+              </button>
+            </div>
+            <div id="list-vueltas" class="p-3 space-y-2 min-h-[110px]">
+              <!-- Items dinámicos -->
+            </div>
+          </div>
+
+          <!-- Instalaciones -->
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white">
+            <div class="bg-slate-100 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
+              <h3 class="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                <i data-lucide="wrench" class="w-4 h-4 text-slate-600"></i>
+                Instalaciones
+              </h3>
+              <button onclick="addLogisticItem('instalaciones')" class="no-print inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-200/70 hover:bg-slate-200 px-2.5 py-1 rounded-lg transition cursor-pointer">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Agregar
+              </button>
+            </div>
+            <div id="list-instalaciones" class="p-3 space-y-2 min-h-[110px]">
+              <!-- Items dinámicos -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 4 & 5. SECCIÓN COMERCIAL Y RECURSOS HUMANOS ==================== -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+
+      <!-- 4. SECCIÓN COMERCIAL (7 columnas en desktop) -->
+      <section class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col card-shadow">
+        <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="trending-up" class="w-5 h-5 text-emerald-400"></i>
+            <h2 class="text-base font-bold tracking-wide uppercase">COMERCIAL</h2>
+          </div>
+          <span id="comercial-badge" class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            En progreso
+          </span>
+        </div>
+
+        <div class="p-4 sm:p-6 flex-1 flex flex-col justify-between gap-5">
+          <!-- 3 KPIs Interactivos -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <!-- Meta del mes (%) -->
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col justify-between">
+              <label for="kpi-meta" class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                Meta del mes (%)
+              </label>
+              <div class="flex items-baseline gap-1">
+                <input type="number" id="kpi-meta" value="100" min="0" max="500" step="0.1"
+                  class="w-full text-2xl sm:text-3xl font-extrabold text-slate-900 bg-white border border-slate-300 rounded-lg px-2.5 py-1 focus:outline-none focus:border-blue-600 transition" />
+                <span class="text-lg font-bold text-slate-500">%</span>
+              </div>
+              <span class="text-[11px] text-slate-400 mt-2">Objetivo mensual establecido</span>
+            </div>
+
+            <!-- Avance acumulado (%) -->
+            <div class="bg-blue-50/60 border border-blue-200 rounded-xl p-4 flex flex-col justify-between">
+              <label for="kpi-avance" class="text-xs font-bold uppercase tracking-wider text-blue-800 mb-2">
+                Avance acumulado (%)
+              </label>
+              <div class="flex items-baseline gap-1">
+                <input type="number" id="kpi-avance" value="0" min="0" max="500" step="0.1"
+                  class="w-full text-2xl sm:text-3xl font-extrabold text-blue-900 bg-white border border-blue-300 rounded-lg px-2.5 py-1 focus:outline-none focus:border-blue-600 transition" />
+                <span class="text-lg font-bold text-blue-700">%</span>
+              </div>
+              <span class="text-[11px] text-blue-600/80 mt-2">Ingresa el avance real al día</span>
+            </div>
+
+            <!-- Faltante para la meta (%) - Calculado automáticamente -->
+            <div id="kpi-faltante-card" class="bg-amber-50/70 border border-amber-200 rounded-xl p-4 flex flex-col justify-between transition-colors">
+              <span class="text-xs font-bold uppercase tracking-wider text-amber-800 mb-2">
+                Faltante para la meta (%)
+              </span>
+              <div class="flex items-baseline gap-1 py-1">
+                <span id="kpi-faltante-val" class="text-2xl sm:text-3xl font-extrabold text-amber-700">100.0</span>
+                <span id="kpi-faltante-symbol" class="text-lg font-bold text-amber-700">%</span>
+              </div>
+              <span id="kpi-faltante-note" class="text-[11px] font-medium text-amber-700/80 mt-2">Cálculo automático (Meta - Avance)</span>
+            </div>
+          </div>
+
+          <!-- Barra visual de cumplimiento comercial -->
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <div class="flex justify-between items-center text-xs font-bold mb-2">
+              <span class="text-slate-700">Progreso hacia la Meta Comercial</span>
+              <span id="comercial-ratio-text" class="text-blue-700">0% de 100%</span>
+            </div>
+            <div class="w-full h-4 bg-slate-200 rounded-full overflow-hidden p-0.5">
+              <div id="comercial-progress-bar" class="h-full rounded-full bg-blue-600 transition-all duration-300" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. SECCIÓN RECURSOS HUMANOS (5 columnas en desktop) -->
+      <section class="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col card-shadow">
+        <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="users" class="w-5 h-5 text-sky-400"></i>
+            <h2 class="text-base font-bold tracking-wide uppercase">RECURSOS HUMANOS</h2>
+          </div>
+          <span id="rrhh-count-badge" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-700 text-slate-200">
+            0 faltas
+          </span>
+        </div>
+
+        <div class="p-4 sm:p-5 flex-1 flex flex-col">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <i data-lucide="user-x" class="w-4 h-4 text-rose-500"></i> Faltas del día
+            </h3>
+            <button onclick="addRrhhRow()" class="no-print inline-flex items-center gap-1 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg transition cursor-pointer">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Agregar falta
+            </button>
+          </div>
+
+          <div class="border border-slate-200 rounded-xl overflow-hidden flex-1">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-100 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-600">
+                  <th class="py-2 px-3">Nombre del colaborador</th>
+                  <th class="py-2 px-3 w-40">Departamento</th>
+                  <th class="py-2 px-2 w-8 no-print"></th>
+                </tr>
+              </thead>
+              <tbody id="rrhh-body" class="divide-y divide-slate-200 text-sm bg-white">
+                <!-- Filas dinámicas JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ==================== 6. SECCIÓN ADMINISTRACIÓN / COMPRAS ==================== -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6 card-shadow">
+      <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <i data-lucide="shopping-cart" class="w-5 h-5 text-emerald-400"></i>
+          <h2 class="text-base font-bold tracking-wide uppercase">ADMINISTRACIÓN / COMPRAS</h2>
+        </div>
+        <span class="text-xs text-slate-300 hidden sm:inline">Seguimiento de abastecimiento y materiales críticos</span>
+      </div>
+
+      <div class="p-4 sm:p-5 grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <!-- Sub-tabla 1: Artículos faltantes -->
+        <div class="border border-slate-200 rounded-xl overflow-hidden flex flex-col bg-white">
+          <div class="bg-rose-50/80 border-b border-rose-200/80 px-4 py-2.5 flex items-center justify-between">
+            <h3 class="text-xs sm:text-sm font-bold text-rose-900 uppercase tracking-wide flex items-center gap-2">
+              <i data-lucide="alert-circle" class="w-4 h-4 text-rose-600"></i>
+              Artículos faltantes
+            </h3>
+            <button onclick="addMissingItemRow()" class="no-print inline-flex items-center gap-1 text-xs font-semibold text-rose-700 hover:text-rose-900 bg-rose-100 hover:bg-rose-200/80 px-2.5 py-1 rounded-lg transition cursor-pointer">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Agregar
+            </button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-600">
+                  <th class="py-2 px-3">Artículo / material</th>
+                  <th class="py-2 px-2.5 w-24">Cantidad</th>
+                  <th class="py-2 px-2.5 w-28">OV afectada</th>
+                  <th class="py-2 px-2.5 w-32">Se necesita</th>
+                  <th class="py-2 px-2 w-8 no-print"></th>
+                </tr>
+              </thead>
+              <tbody id="compras-faltantes-body" class="divide-y divide-slate-200 text-sm">
+                <!-- Filas dinámicas -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Sub-tabla 2: Material y artículos que vienen en camino -->
+        <div class="border border-slate-200 rounded-xl overflow-hidden flex flex-col bg-white">
+          <div class="bg-emerald-50/80 border-b border-emerald-200/80 px-4 py-2.5 flex items-center justify-between">
+            <h3 class="text-xs sm:text-sm font-bold text-emerald-900 uppercase tracking-wide flex items-center gap-2">
+              <i data-lucide="package-check" class="w-4 h-4 text-emerald-600"></i>
+              Material y artículos que vienen en camino
+            </h3>
+            <button onclick="addIncomingItemRow()" class="no-print inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 hover:text-emerald-950 bg-emerald-100 hover:bg-emerald-200/80 px-2.5 py-1 rounded-lg transition cursor-pointer">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Agregar
+            </button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-600">
+                  <th class="py-2 px-3">Artículo / material</th>
+                  <th class="py-2 px-2.5 w-24">Cantidad</th>
+                  <th class="py-2 px-2.5 w-32">Proveedor</th>
+                  <th class="py-2 px-2.5 w-32">Llegada prevista</th>
+                  <th class="py-2 px-2 w-8 no-print"></th>
+                </tr>
+              </thead>
+              <tbody id="compras-camino-body" class="divide-y divide-slate-200 text-sm">
+                <!-- Filas dinámicas -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pie de página informativo -->
+    <footer class="text-center text-xs text-slate-400 pt-2 pb-6 no-print">
+      Bitácora de Arranque Diario &bull; Almacenamiento local automático por fecha en este navegador.
+    </footer>
+
+  </div>
+
+  <!-- ==================== LÓGICA JAVASCRIPT ==================== -->
+  <script>
+    const STORAGE_PREFIX = 'bitacora_arranque_v1_';
+
+    // Obtener fecha actual en formato YYYY-MM-DD local
+    function getTodayDateString() {
+      const now = new Date();
+      const offset = now.getTimezoneOffset();
+      const localDate = new Date(now.getTime() - (offset * 60 * 1000));
+      return localDate.toISOString().split('T')[0];
+    }
+
+    // Obtener hora actual HH:MM
+    function getCurrentTimeString() {
+      const now = new Date();
+      return now.toTimeString().slice(0, 5);
+    }
+
+    // Crear estructura de datos vacía por defecto (12 filas en Producción Ayer y Hoy)
+    function createEmptyState(dateStr) {
+      return {
+        fecha: dateStr || getTodayDateString(),
+        hora: '08:00',
+        coordina: '',
+        produccion: {
+          ayer: Array.from({ length: 12 }, () => ({ ov: '', avance: '' })),
+          hoy: Array.from({ length: 12 }, () => ({ ov: '', avance: '' }))
+        },
+        logistica: {
+          entregadasAyer: ['', '', '', ''],
+          entregarHoy: ['', '', '', ''],
+          vueltas: ['', '', ''],
+          instalaciones: ['', '', '']
+        },
+        comercial: {
+          meta: 100,
+          avance: 0
+        },
+        rrhh: [
+          { nombre: '', departamento: '' },
+          { nombre: '', departamento: '' },
+          { nombre: '', departamento: '' }
+        ],
+        compras: {
+          faltantes: [
+            { articulo: '', cantidad: '', ov: '', necesita: '' },
+            { articulo: '', cantidad: '', ov: '', necesita: '' },
+            { articulo: '', cantidad: '', ov: '', necesita: '' }
+          ],
+          enCamino: [
+            { articulo: '', cantidad: '', proveedor: '', llegada: '' },
+            { articulo: '', cantidad: '', proveedor: '', llegada: '' },
+            { articulo: '', cantidad: '', proveedor: '', llegada: '' }
+          ]
+        }
+      };
+    }
+
+    let appState = createEmptyState(getTodayDateString());
+    let saveTimeout = null;
+
+    // Inicialización al cargar la página
+    window.addEventListener('DOMContentLoaded', () => {
+      const today = getTodayDateString();
+      const dateInput = document.getElementById('header-date');
+      dateInput.value = today;
+
+      loadDataForDate(today);
+      updateSavedDatesCount();
+      lucide.createIcons();
+
+      // Eventos de encabezado
+      dateInput.addEventListener('change', (e) => {
+        const newDate = e.target.value;
+        if (newDate) {
+          loadDataForDate(newDate);
+          showToast(`Bitácora cargada: ${newDate}`);
+        }
+      });
+
+      document.getElementById('header-time').addEventListener('input', (e) => {
+        appState.hora = e.target.value;
+        scheduleAutoSave();
+      });
+
+      document.getElementById('header-coordina').addEventListener('input', (e) => {
+        appState.coordina = e.target.value;
+        scheduleAutoSave();
+      });
+
+      // Eventos KPI Comercial
+      document.getElementById('kpi-meta').addEventListener('input', (e) => {
+        appState.comercial.meta = parseFloat(e.target.value) || 0;
+        updateComercialKPIs();
+        scheduleAutoSave();
+      });
+
+      document.getElementById('kpi-avance').addEventListener('input', (e) => {
+        appState.comercial.avance = parseFloat(e.target.value) || 0;
+        updateComercialKPIs();
+        scheduleAutoSave();
+      });
+
+      // Eventos Modal Confirmación
+      document.getElementById('modal-cancel').addEventListener('click', closeConfirmModal);
+      document.getElementById('modal-confirm').addEventListener('click', executeResetDay);
+    });
+
+    // Cargar datos desde localStorage para una fecha específica
+    function loadDataForDate(dateStr) {
+      const savedRaw = localStorage.getItem(STORAGE_PREFIX + dateStr);
+      if (savedRaw) {
+        try {
+          const parsed = JSON.parse(savedRaw);
+          appState = { ...createEmptyState(dateStr), ...parsed, fecha: dateStr };
+        } catch (err) {
+          console.error('Error al leer localStorage:', err);
+          appState = createEmptyState(dateStr);
+        }
+      } else {
+        appState = createEmptyState(dateStr);
+      }
+      renderAll();
+    }
+
+    // Guardar en localStorage
+    function saveCurrentData(manual = false) {
+      const key = STORAGE_PREFIX + appState.fecha;
+      localStorage.setItem(key, JSON.stringify(appState));
+      
+      const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      document.getElementById('save-status').textContent = `Guardado (${nowTime})`;
+      updateSavedDatesCount();
+
+      if (manual) {
+        showToast(`Bitácora del ${appState.fecha} guardada correctamente`);
+      }
+    }
+
+    function scheduleAutoSave() {
+      document.getElementById('save-status').textContent = 'Guardando cambios...';
+      clearTimeout(saveTimeout);
+      saveTimeout = setTimeout(() => {
+        saveCurrentData(false);
+      }, 400);
+    }
+
+    function updateSavedDatesCount() {
+      let count = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        if (localStorage.key(i).startsWith(STORAGE_PREFIX)) count++;
+      }
+      document.getElementById('saved-dates-badge').textContent = `${count} ${count === 1 ? 'día guardado' : 'días guardados'}`;
+    }
+
+    // ==================== RENDERIZADO GENERAL ====================
+    function renderAll() {
+      // Encabezado
+      document.getElementById('header-date').value = appState.fecha;
+      document.getElementById('header-time').value = appState.hora || '08:00';
+      document.getElementById('header-coordina').value = appState.coordina || '';
+
+      // Producción
+      renderProductionTable('ayer');
+      renderProductionTable('hoy');
+      updateProductionAverages();
+
+      // Logística
+      renderLogisticList('entregadasAyer', 'Ej. OV-10452 - Cliente / Destino');
+      renderLogisticList('entregarHoy', 'Ej. OV-10489 - Cliente / Destino');
+      renderLogisticList('vueltas', 'Detalle de vuelta, recolección o embarque...');
+      renderLogisticList('instalaciones', 'Detalle de instalación programada / cuadrilla...');
+
+      // Comercial
+      document.getElementById('kpi-meta').value = appState.comercial.meta;
+      document.getElementById('kpi-avance').value = appState.comercial.avance;
+      updateComercialKPIs();
+
+      // Recursos Humanos
+      renderRrhhTable();
+
+      // Administración / Compras
+      renderMissingItemsTable();
+      renderIncomingItemsTable();
+
+      lucide.createIcons();
+    }
+
+    // ==================== 2. PRODUCCIÓN ====================
+    function getProgressColor(pct) {
+      if (pct >= 100) return 'bg-emerald-500';
+      if (pct >= 70) return 'bg-blue-600';
+      if (pct >= 40) return 'bg-amber-500';
+      return 'bg-rose-500';
+    }
+
+    function renderProductionTable(side) {
+      const tbody = document.getElementById(`prod-${side}-body`);
+      const rows = appState.produccion[side];
+      tbody.innerHTML = '';
+
+      rows.forEach((row, idx) => {
+        const pct = Math.min(100, Math.max(0, Number(row.avance) || 0));
+        const hasValue = row.avance !== '' && row.avance !== null;
+        const barColor = getProgressColor(pct);
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50/90 transition-colors group';
+        tr.innerHTML = `
+          <td class="py-1.5 px-3 text-center text-xs font-semibold text-slate-400">${idx + 1}</td>
+          <td class="py-1.5 px-2">
+            <input type="text" value="${escapeHtml(row.ov)}" placeholder="OV-0000"
+              oninput="updateProdRow('${side}', ${idx}, 'ov', this.value)"
+              class="w-full px-2 py-1 text-sm font-medium text-slate-800 bg-transparent border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded-md focus:outline-none transition" />
+          </td>
+          <td class="py-1.5 px-3">
+            <div class="flex items-center gap-2">
+              <div class="relative w-16 shrink-0">
+                <input type="number" min="0" max="100" value="${row.avance}" placeholder="0"
+                  oninput="updateProdRow('${side}', ${idx}, 'avance', this.value, this)"
+                  class="w-full pr-5 pl-2 py-1 text-right text-sm font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white rounded-md focus:outline-none transition" />
+                <span class="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">%</span>
+              </div>
+              <div class="flex-1 h-2.5 bg-slate-200 rounded-full overflow-hidden min-w-[55px]">
+                <div id="bar-${side}-${idx}" class="h-full rounded-full transition-all duration-200 ${hasValue ? barColor : 'bg-transparent'}" style="width: ${hasValue ? pct : 0}%"></div>
+              </div>
+            </div>
+          </td>
+          <td class="py-1.5 px-2 text-center no-print">
+            <button onclick="removeProdRow('${side}', ${idx})" title="Eliminar fila"
+              class="text-slate-300 hover:text-rose-600 p-1 rounded transition opacity-60 group-hover:opacity-100 cursor-pointer">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function updateProdRow(side, idx, field, value, inputEl) {
+      if (field === 'avance') {
+        let num = value === '' ? '' : Math.max(0, Math.min(100, Number(value)));
+        appState.produccion[side][idx].avance = num;
+        
+        // Actualizar barra dinámicamente sin perder foco
+        const bar = document.getElementById(`bar-${side}-${idx}`);
+        if (bar) {
+          const hasVal = num !== '';
+          const pct = hasVal ? num : 0;
+          bar.style.width = `${pct}%`;
+          bar.className = `h-full rounded-full transition-all duration-200 ${hasVal ? getProgressColor(pct) : 'bg-transparent'}`;
+        }
+        updateProductionAverages();
+      } else {
+        appState.produccion[side][idx][field] = value;
+      }
+      scheduleAutoSave();
+    }
+
+    function addProdRow(side) {
+      appState.produccion[side].push({ ov: '', avance: '' });
+      renderProductionTable(side);
+      lucide.createIcons();
+      scheduleAutoSave();
+    }
+
+    function removeProdRow(side, idx) {
+      if (appState.produccion[side].length <= 1) {
+        appState.produccion[side][0] = { ov: '', avance: '' };
+      } else {
+        appState.produccion[side].splice(idx, 1);
+      }
+      renderProductionTable(side);
+      updateProductionAverages();
+      lucide.createIcons();
+      scheduleAutoSave();
+    }
+
+    function updateProductionAverages() {
+      ['ayer', 'hoy'].forEach(side => {
+        const validRows = appState.produccion[side].filter(r => r.avance !== '' && !isNaN(Number(r.avance)));
+        const avg = validRows.length
+          ? Math.round(validRows.reduce((acc, r) => acc + Number(r.avance), 0) / validRows.length)
+          : 0;
+        document.getElementById(`avg-prod-${side}`).textContent = `${avg}%`;
+      });
+    }
+
+    // ==================== 3. LOGÍSTICA ====================
+    function renderLogisticList(key, placeholder) {
+      const container = document.getElementById(`list-${key}`);
+      const items = appState.logistica[key];
+      container.innerHTML = '';
+
+      items.forEach((val, idx) => {
+        const rowDiv = document.createElement('div');
+        rowDiv.className = 'flex items-center gap-2 group';
+        rowDiv.innerHTML = `
+          <span class="w-5 text-center text-xs font-bold text-slate-400 select-none">${idx + 1}.</span>
+          <input type="text" value="${escapeHtml(val)}" placeholder="${placeholder}"
+            oninput="updateLogisticItem('${key}', ${idx}, this.value)"
+            class="flex-1 px-3 py-1.5 text-sm text-slate-800 bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded-lg focus:outline-none transition" />
+          <button onclick="removeLogisticItem('${key}', ${idx})" title="Quitar registro"
+            class="no-print text-slate-300 hover:text-rose-600 p-1.5 rounded-lg transition opacity-60 group-hover:opacity-100 cursor-pointer">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        `;
+        container.appendChild(rowDiv);
+      });
+    }
+
+    function updateLogisticItem(key, idx, value) {
+      appState.logistica[key][idx] = value;
+      scheduleAutoSave();
+    }
+
+    function addLogisticItem(key) {
+      appState.logistica[key].push('');
+      const placeholders = {
+        entregadasAyer: 'Ej. OV-10452 - Cliente / Destino',
+        entregarHoy: 'Ej. OV-10489 - Cliente / Destino',
+        vueltas: 'Detalle de vuelta, recolección o embarque...',
+        instalaciones: 'Detalle de instalación programada / cuadrilla...'
+      };
+      renderLogisticList(key, placeholders[key]);
+      lucide.createIcons();
+      scheduleAutoSave();
+    }
+
+    function removeLogisticItem(key, idx) {
+      if (appState.logistica[key].length <= 1) {
+        appState.logistica[key][0] = '';
+      } else {
+        appState.logistica[key].splice(idx, 1);
+      }
+      const placeholders = {
+        entregadasAyer: 'Ej. OV-10452 - Cliente / Destino',
+        entregarHoy: 'Ej. OV-10489 - Cliente / Destino',
+        vueltas: 'Detalle de vuelta, recolección o embarque...',
+        instalaciones: 'Detalle de instalación programada / cuadrilla...'
+      };
+      renderLogisticList(key, placeholders[key]);
+      lucide.createIcons();
+      scheduleAutoSave();
+    }
+
+    // ==================== 4. COMERCIAL ====================
+    function updateComercialKPIs() {
+      const meta = Math.max(0, Number(appState.comercial.meta) || 0);
+      const avance = Math.max(0, Number(appState.comercial.avance) || 0);
+      const faltante = Math.max(0, meta - avance);
+      const ratio = meta > 0 ? Math.min(100, (avance / meta) * 100) : 0;
+
+      const faltanteValEl = document.getElementById('kpi-faltante-val');
+      const faltanteCard = document.getElementById('kpi-faltante-card');
+      const faltanteSymbol = document.getElementById('kpi-faltante-symbol');
+      const faltanteNote = document.getElementById('kpi-faltante-note');
+      const badge = document.getElementById('comercial-badge');
+      const bar = document.getElementById('comercial-progress-bar');
+      const ratioText = document.getElementById('comercial-ratio-text');
+
+      faltanteValEl.textContent = Number.isInteger(faltante) ? faltante : faltante.toFixed(1);
+      ratioText.textContent = `${avance}% de ${meta}% (${ratio.toFixed(0)}%)`;
+      bar.style.width = `${ratio}%`;
+
+      if (avance >= meta && meta > 0) {
+        // Meta cumplida o superada
+        faltanteCard.className = 'bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex flex-col justify-between transition-colors';
+        faltanteValEl.className = 'text-2xl sm:text-3xl font-extrabold text-emerald-700';
+        faltanteSymbol.className = 'text-lg font-bold text-emerald-700';
+        faltanteNote.className = 'text-[11px] font-semibold text-emerald-700 mt-2';
+        faltanteNote.textContent = '¡Meta mensual alcanzada!';
+
+        badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        badge.textContent = 'Meta Cumplida';
+        bar.className = 'h-full rounded-full bg-emerald-500 transition-all duration-300';
+      } else if (ratio >= 75) {
+        // Cerca de la meta
+        faltanteCard.className = 'bg-amber-50/70 border border-amber-200 rounded-xl p-4 flex flex-col justify-between transition-colors';
+        faltanteValEl.className = 'text-2xl sm:text-3xl font-extrabold text-amber-700';
+        faltanteSymbol.className = 'text-lg font-bold text-amber-700';
+        faltanteNote.className = 'text-[11px] font-medium text-amber-700/80 mt-2';
+        faltanteNote.textContent = 'Recta final para alcanzar la meta';
+
+        badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30';
+        badge.textContent = 'En recta final';
+        bar.className = 'h-full rounded-full bg-amber-500 transition-all duration-300';
+      } else {
+        // En progreso / Alerta
+        faltanteCard.className = 'bg-rose-50/70 border border-rose-200 rounded-xl p-4 flex flex-col justify-between transition-colors';
+        faltanteValEl.className = 'text-2xl sm:text-3xl font-extrabold text-rose-700';
+        faltanteSymbol.className = 'text-lg font-bold text-rose-700';
+        faltanteNote.className = 'text-[11px] font-medium text-rose-700/80 mt-2';
+        faltanteNote.textContent = 'Cálculo automático (Meta - Avance)';
+
+        badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30';
+        badge.textContent = 'Atención comercial';
+        bar.className = 'h-full rounded-full bg-blue-600 transition-all duration-300';
+      }
+    }
+
+    // ==================== 5. RECURSOS HUMANOS ====================
+    function renderRrhhTable() {
+      const tbody = document.getElementById('rrhh-body');
+      tbody.innerHTML = '';
+
+      appState.rrhh.forEach((row, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition-colors group';
+        tr.innerHTML = `
+          <td class="py-1.5 px-2.5">
+            <input type="text" value="${escapeHtml(row.nombre)}" placeholder="Nombre completo..."
+              oninput="updateRrhhRow(${idx}, 'nombre', this.value)"
+              class="w-full px-2 py-1 text-sm text-slate-800 bg-transparent border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded-md focus:outline-none transition" />
+          </td>
+          <td class="py-1.5 px-2.5">
+            <input type="text" value="${escapeHtml(row.departamento)}" placeholder="Ej. Producción"
+              oninput="updateRrhhRow(${idx}, 'departamento', this.value)"
+              class="w-full px-2 py-1 text-sm text-slate-700 bg-transparent border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded-md focus:outline-none transition" />
+          </td>
+          <td class="py-1.5 px-2 text-center no-print">
+            <button onclick="removeRrhhRow(${idx})" title="Eliminar registro"
+              class="text-slate-300 hover:text-rose-600 p-1 rounded transition opacity-60 group-hover:opacity-100 cursor-pointer">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      updateRrhhBadge();
+    }
+
+    function updateRrhhRow(idx, field, value) {
+      appState.rrhh[idx][field] = value;
+      updateRrhhBadge();
+      scheduleAutoSave();
+    }
+
+    function updateRrhhBadge() {
+      const activeCount = appState.rrhh.filter(r => r.nombre.trim() !== '').length;
+      document.getElementById('rrhh-count-badge').textContent = `${activeCount} ${activeCount === 1 ? 'falta' : 'faltas'}`;
+    }
+
+    function addRrhhRow() {
+      appState.rrhh.push({ nombre: '', departamento: '' });
+      renderRrhhTable();
+      lucide.createIcons();
+      scheduleAutoSave();
+    }
+
+    function removeRrhhRow(idx) {
+      if (appState.rrhh.length <= 1) {
+        appState.rrhh[0] = { nombre: '', departamento: '' };
+      } else {
+        appState.rrhh.splice(idx, 1);
+      }
+      renderRrhhTable();
+      lucide.createIcons();
+      scheduleAutoSave();
+    }
+
+    // ==================== 6. ADMINISTRACIÓN / COMPRAS ====================
+    function renderMissingItemsTable() {
+      const tbody = document.getElementById('compras-faltantes-body');
+      tbody.innerHTML = '';
+
+      appState.compras.faltantes.forEach((row, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition-colors group';
+        tr.innerHTML = `
+          <td class="py-1.5 px-2.5">
+            <input type="text" value="${escapeHtml(row.articulo)}" placeholder="Descripción material..."
+              oninput="updateMissingRow(${idx}, 'articulo', this.value)"
+              class="w-full px-2 py-1 text-sm text-slate-800 bg-transparent border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded-md focus:outline-none transition" />
+          </td>
+          <td class="py-1.5 px-2">
+            <input type="text" value="${escapeHtml(row.cantidad)}" placeholder="0 pzas"
+              oninput="updateMissingRow(${idx}, 'cantidad', this.value)"
+              class="w-full px-2 py-1 text-sm font-medium text-slate-800 bg-transparent border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded-md focus:outline-none transition" />
+          </td>
+          <td class="py-1.5 px-2">
+            <input type="text" value="${escapeHtml(row.ov)}" placeholder="OV-0000"
+              oninput="updateMissingRow(${idx}, 'ov', this.value)"
+              class="w-full px-2 py-1 text-sm font-medium text-rose-700 bg-transparent border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded-md focus:outline-none transition" />
+          </td>
+          <td class="py-1.5 px-2">
+            <input type="text" value="${escapeHtml(row.necesita)}" placeholder="Urgente / Fecha"
+              oninput="updateMissingRow(${idx}, 'necesita', this.value)"
+              class="w-full px-2 py-1 text-sm text-slate-700 bg-transparent border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded-md focus:outline-none transition" />
+          </td>
+          <td class="py-1.5 px-2 text-center no-print">
+            <button onclick="removeMissingRow(${idx})" title="Eliminar fila"
+              class="text-slate-300 hover:text-rose-600 p-1 rounded transition opacity-60 group-hover:opacity-100 cursor-pointer">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function updateMissingRow(idx, field, value) {
+      appState.compras.faltantes[idx][field] = value;
+      scheduleAutoSave();
+    }
+
+    function addMissingItemRow() {
+      appState.compras.faltantes.push({ articulo: '', cantidad: '', ov: '', necesita: '' });
+      renderMissingItemsTable();
+      lucide.createIcons();
+      scheduleAutoSave();
+    }
+
+    function removeMissingRow(idx) {
+      if (appState.compras.faltantes.length <= 1) {
+        appState.compras.faltantes[0] = { articulo: '', cantidad: '', ov: '', necesita: '' };
+      } else {
+        appState.compras.faltantes.splice(idx, 1);
+      }
+      renderMissingItemsTable();
+      lucide.createIcons();
+      scheduleAutoSave();
+    }
+
+    function renderIncomingItemsTable() {
+      const tbody = document.getElementById('compras-camino-body');
+      tbody.innerHTML = '';
+
+      appState.compras.enCamino.forEach((row, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition-colors group';
+        tr.innerHTML = `
+          <td class="py-1.5 px-2.5">
+            <input type="text" value="${escapeHtml(row.articulo)}" placeholder="Descripción material..."
+              oninput="updateIncomingRow(${idx}, 'articulo', this.value)"
+              class="w-full px-2 py-1 text-sm text-slate-800 bg-transparent border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded-md focus:outline-none transition" />
+          </td>
+          <td class="py-1.5 px-2">
+            <input type="text" value="${escapeHtml(row.cantidad)}" placeholder="0 pzas"
+              oninput="updateIncomingRow(${idx}, 'cantidad', this.value)"
+              class="w-full px-2 py-1 text-sm font-medium text-slate-800 bg-transparent border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded-md focus:outline-none transition" />
+          </td>
+          <td class="py-1.5 px-2">
+            <input type="text" value="${escapeHtml(row.proveedor)}" placeholder="Proveedor..."
+              oninput="updateIncomingRow(${idx}, 'proveedor', this.value)"
+              class="w-full px-2 py-1 text-sm text-slate-700 bg-transparent border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded-md focus:outline-none transition" />
+          </td>
+          <td class="py-1.5 px-2">
+            <input type="text" value="${escapeHtml(row.llegada)}" placeholder="Hoy / Mañana"
+              oninput="updateIncomingRow(${idx}, 'llegada', this.value)"
+              class="w-full px-2 py-1 text-sm font-medium text-emerald-700 bg-transparent border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded-md focus:outline-none transition" />
+          </td>
+          <td class="py-1.5 px-2 text-center no-print">
+            <button onclick="removeIncomingRow(${idx})" title="Eliminar fila"
+              class="text-slate-300 hover:text-rose-600 p-1 rounded transition opacity-60 group-hover:opacity-100 cursor-pointer">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function updateIncomingRow(idx, field, value) {
+      appState.compras.enCamino[idx][field] = value;
+      scheduleAutoSave();
+    }
+
+    function addIncomingItemRow() {
+      appState.compras.enCamino.push({ articulo: '', cantidad: '', proveedor: '', llegada: '' });
+      renderIncomingItemsTable();
+      lucide.createIcons();
+      scheduleAutoSave();
+    }
+
+    function removeIncomingRow(idx) {
+      if (appState.compras.enCamino.length <= 1) {
+        appState.compras.enCamino[0] = { articulo: '', cantidad: '', proveedor: '', llegada: '' };
+      } else {
+        appState.compras.enCamino.splice(idx, 1);
+      }
+      renderIncomingItemsTable();
+      lucide.createIcons();
+      scheduleAutoSave();
+    }
+
+    // ==================== UTILIDADES, MODAL Y EXPORTACIÓN ====================
+    function escapeHtml(text) {
+      if (text === null || text === undefined) return '';
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-message').textContent = msg;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+      }, 2800);
+    }
+
+    function promptResetDay() {
+      const modal = document.getElementById('confirm-modal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeConfirmModal() {
+      const modal = document.getElementById('confirm-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function executeResetDay() {
+      const currentFecha = appState.fecha;
+      appState = createEmptyState(currentFecha);
+      saveCurrentData(false);
+      renderAll();
+      closeConfirmModal();
+      showToast(`Plantilla limpia para la fecha ${currentFecha}`);
+    }
+
+    // Exportar archivo JSON
+    function exportJSON() {
+      const dataStr = JSON.stringify(appState, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Bitacora_Arranque_${appState.fecha}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Archivo JSON descargado');
+    }
+
+    // Exportar archivo CSV estructurado
+    function exportCSV() {
+      const lines = [];
+      lines.push(['BITACORA DE ARRANQUE DIARIO']);
+      lines.push(['Fecha', appState.fecha, 'Hora', appState.hora, 'Coordina', `"${appState.coordina}"`]);
+      lines.push([]);
+
+      // Producción
+      lines.push(['PRODUCCION - AYER', 'AVANCE (%)', '', 'PRODUCCION - HOY', 'AVANCE (%)']);
+      const maxProd = Math.max(appState.produccion.ayer.length, appState.produccion.hoy.length);
+      for (let i = 0; i < maxProd; i++) {
+        const a = appState.produccion.ayer[i] || { ov: '', avance: '' };
+        const h = appState.produccion.hoy[i] || { ov: '', avance: '' };
+        lines.push([`"${a.ov}"`, a.avance !== '' ? `${a.avance}%` : '', '', `"${h.ov}"`, h.avance !== '' ? `${h.avance}%` : '']);
+      }
+      lines.push([]);
+
+      // Logística
+      lines.push(['LOGISTICA - ENTREGADAS AYER', 'LOGISTICA - A ENTREGAR HOY', 'VUELTAS / RECOLECCIONES / EMBARQUES', 'INSTALACIONES']);
+      const maxLog = Math.max(
+        appState.logistica.entregadasAyer.length,
+        appState.logistica.entregarHoy.length,
+        appState.logistica.vueltas.length,
+        appState.logistica.instalaciones.length
+      );
+      for (let i = 0; i < maxLog; i++) {
+        lines.push([
+          `"${appState.logistica.entregadasAyer[i] || ''}"`,
+          `"${appState.logistica.entregarHoy[i] || ''}"`,
+          `"${appState.logistica.vueltas[i] || ''}"`,
+          `"${appState.logistica.instalaciones[i] || ''}"`
+        ]);
+      }
+      lines.push([]);
+
+      // Comercial
+      const faltante = Math.max(0, (Number(appState.comercial.meta) || 0) - (Number(appState.comercial.avance) || 0));
+      lines.push(['COMERCIAL - META DEL MES (%)', 'AVANCE ACUMULADO (%)', 'FALTANTE PARA LA META (%)']);
+      lines.push([`${appState.comercial.meta}%`, `${appState.comercial.avance}%`, `${faltante}%`]);
+      lines.push([]);
+
+      // RRHH
+      lines.push(['RECURSOS HUMANOS - NOMBRE COLABORADOR', 'DEPARTAMENTO']);
+      appState.rrhh.forEach(r => {
+        if (r.nombre || r.departamento) lines.push([`"${r.nombre}"`, `"${r.departamento}"`]);
+      });
+      lines.push([]);
+
+      // Compras Faltantes
+      lines.push(['COMPRAS - ARTICULOS FALTANTES', 'CANTIDAD', 'OV AFECTADA', 'SE NECESITA']);
+      appState.compras.faltantes.forEach(f => {
+        if (f.articulo || f.cantidad || f.ov || f.necesita) {
+          lines.push([`"${f.articulo}"`, `"${f.cantidad}"`, `"${f.ov}"`, `"${f.necesita}"`]);
+        }
+      });
+      lines.push([]);
+
+      // Compras En Camino
+      lines.push(['COMPRAS - MATERIAL EN CAMINO', 'CANTIDAD', 'PROVEEDOR', 'LLEGADA PREVISTA']);
+      appState.compras.enCamino.forEach(c => {
+        if (c.articulo || c.cantidad || c.proveedor || c.llegada) {
+          lines.push([`"${c.articulo}"`, `"${c.cantidad}"`, `"${c.proveedor}"`, `"${c.llegada}"`]);
+        }
+      });
+
+      const csvContent = '\uFEFF' + lines.map(e => e.join(',')).join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Bitacora_Arranque_${appState.fecha}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Archivo CSV descargado');
+    }
+  </script>
+</body>
+</html>
